@@ -5,6 +5,7 @@ import scipy.sparse.linalg as sla
 import scipy.linalg as la
 import tskit as ts
 from statsmodels.distributions.empirical_distribution import ECDF
+from multiprocessing import Pool
 
 def n_samps_mat(nlineages, n, ap, hp, r, mut):
 # to avoid confusion, nlineages and n are both in terms of number of chromosomes. For a diploid organism, double the effective population size before inputting.
@@ -88,7 +89,7 @@ def n_samps_mat(nlineages, n, ap, hp, r, mut):
     mat = csr_matrix((vals, cols, rows))
     #print(mat.toarray())
     #return mat
-    return identity(dim1, format="csr") - mat*(1/mut)
+    return (identity(dim1, format="csr") - mat*(1/mut)).toarray()
 def neut_mat(n, nlineages, mut):
     coal_rates = [-comb(x,2)/n for x in range(2,nlineages+1)]
     coal_rates.reverse()
@@ -98,7 +99,7 @@ def neut_mat(n, nlineages, mut):
 
 
 def matmean(mat, vec):
-    inv = sla.inv(mat).toarray()
+    inv = la.inv(mat)
     ln = inv.shape[0]
     idd = np.eye(ln)
     vec2 = vec.dot(inv)
@@ -109,11 +110,12 @@ def matmean_cont(mat, vec):
     return vec.dot(inv.dot(np.ones(vec.shape[0])))
 
 def cdf(mat, vec, x):
-    mat = np.linalg.inv(mat.toarray())
+    mat = np.linalg.inv(mat)
     vec = vec.dot(mat)
     matpow = np.linalg.matrix_power(mat, x)
+    vec = np.ravel(vec)
     ones = np.ones(vec.shape[0])
-    return 1 - vec.dot(matpow.dot(ones))
+    return 1 - vec.dot(np.ravel(matpow.dot(ones)))
 def distance_to_prob(distance, recomb_rate):
     distance = float(distance)
     x = 0.5*(1-e**(-2*distance*recomb_rate))
@@ -123,16 +125,33 @@ def prob_to_distance(prob, recomb_rate):
     # print(type(recomb_rate))
     x=(-(1/(2*recomb_rate))*np.log(1-2*prob))
     return x
-def pre_ecdf(treename, samp_size, num_samps, num_windows, recomb_rate, end):
+def sampler(state, a0, a1):
+    return np.concatenate((np.random.choice(a0, state[0], replace = False), np.random.choice(a1, state[1], replace = False)))
+
+def pre_ecdf(treename, samp_size, num_samps, num_windows, recomb_rate, end, num_tasks):
     #need to redo windowing code to save window size, be less messy, and incorporate sensible endpoints
     #probably just do one round of windowing and then just add up windows that need to be paired together.
     tree = ts.load(str(treename))
     for x in tree.variants(left=int(1e6), right=int(1e6)+1):
         g = x
-    tot = g.counts()['0']+g.counts()['1']
-    state = (round(samp_size*g.counts()['0']/tot), round(samp_size*g.counts()['1']/tot))
-    a0 = [x for x in tree.samples() if g.alleles[g.genotypes[x]] == '0']
-    a1 = [x for x in tree.samples() if g.alleles[g.genotypes[x]] == '1']
+    alleles = np.unique(g.genotypes, return_counts=True)
+    print(alleles)
+    kept=[]
+    tmp_count = 0
+    kept = [alleles[0][x] for x in range(len(alleles[0])) if alleles[1][x] >= tree.samples().shape[0]*0.05]
+    print(kept)
+    counts = [alleles[1][np.where(alleles[0] == int(x))][0] for x in kept]
+    tot = sum(counts)
+    print(counts)
+    freqs = [round(samp_size*x/tot) for x in counts]
+    if len(kept) > 2:
+        raise Exception("More than 2 non-trivial alleles")
+    state = (freqs[0], freqs[1])
+    print(state)
+    a0 = [x for x in tree.samples() if g.alleles[g.genotypes[x]] == g.alleles[kept[0]]]
+    print(len(a0))
+    a1 = [x for x in tree.samples() if g.alleles[g.genotypes[x]] == g.alleles[kept[1]]]
+    print(len(a1))
     prob_breakpoints = np.logspace(-5, np.log10(end), int(num_windows))
     avgs = [np.amin([prob_breakpoints[x], prob_breakpoints[x+1]]) for x in range(len(prob_breakpoints)-1)]
     #print(prob_breakpoints)
@@ -146,11 +165,15 @@ def pre_ecdf(treename, samp_size, num_samps, num_windows, recomb_rate, end):
     distance_breakpoints3.sort()
     window_sizes = [distance_breakpoints[x+1] - distance_breakpoints[x] for x in range(len(distance_breakpoints)-1)]
     print(distance_breakpoints3)
-    samps_list = [np.concatenate((np.random.choice(a0, state[0], replace = False), np.random.choice(a1, state[1],replace=False))) for x in range(num_samps)]
-    #need to implementing sampling in accordance with proper state
+    #need to multi-thread this part
+    with Pool(num_tasks) as pool:
+        samps_list = pool.starmap(sampler, [(state, a0, a1) for i in range(num_samps)])
+    #samps_list = np.array(samps_list)
+    #samps_list = [np.concatenate((np.random.choice(a0, state[0], replace = False), np.random.choice(a1, state[1],replace=False))) for x in range(num_samps)]
     samp_sites = np.array([tree.segregating_sites(sample_sets = samp, span_normalise=False, windows=distance_breakpoints3) for samp in samps_list])
     winnum = int((len(distance_breakpoints3)-1)/2)
     samp_sites = [samp_sites[:,winnum-x] + samp_sites[:,winnum+x] for x in range(winnum-1)]
+    #multi-thread till here
     stateslist = []
     for i in range(int(samp_size)+1):
         for j in range(int(samp_size)+1-i):
@@ -177,8 +200,9 @@ def ecdf_arr(samp_sites):
         tmp.append(list1)
     return tmp
 def ks_dist(mat, vec, ecdf_vec):
-    mini = ecdf_vec[-1]
+    mini = round(ecdf_vec[-1])
     ecdf_vec = ecdf_vec[:-1]
+    #print(ecdf_vec)
     maxi = len(ecdf_vec) + mini - 1
     acdf_vec = np.array([cdf(mat, vec, x) for x in range(int(mini-1), int(maxi))])
     #print(acdf_vec)

@@ -1,0 +1,104 @@
+
+
+initialize() {
+	initializeTreeSeq(timeUnit="generations");
+	//defineConstant("sw", 0.1);
+	//defineConstant("dw", 0.6);
+	///
+	//defineConstant("ss", 0.2); // orig 0.1
+	//defineConstant("ds", 0.4); // oring 0.6
+ 	///
+	//defineConstant("Ns", 100);
+	//defineConstant("WinterFreq", 0.7);
+// create seasonal counters
+	defineGlobal("x", 0);
+   	defineGlobal("y", 0);
+	defineGlobal("season", "summer");
+
+// create basic paramters
+	initializeMutationType("m1", dw, "f", sw);
+	m1.color = "blue";
+	m1.convertToSubstitution = F;
+	initializeMutationType("m2", ds, "f", ss);
+	m2.color = "red";
+	m2.convertToSubstitution = F;
+	initializeRecombinationRate(r, 2e6);
+	initializeGenomicElementType("g1", c(m1,m2), c(1.0, 1.0));
+	initializeGenomicElement(g1, 1e6, 1e6+1);
+	initializeMutationRate(0);
+	
+}
+
+1 early() {
+	sim.addSubpop("p1", N);
+	community.rescheduleScriptBlock(s1, 10*N, 10*N);
+	
+alls_inds = p1.individuals;
+set1 = sample(alls_inds, asInteger(round(N*WinterFreq)));
+set2 = setDifference(alls_inds, set1);
+
+	target1=set1.genomes;
+	target1.addNewDrawnMutation(m1, 1e6);
+	defineConstant("winter", target1.mutations[0]);
+	
+	target2=set2.genomes;
+	target2.addNewDrawnMutation(m2, 1e6);
+	defineConstant("summer", target2.mutations[0]);
+
+}
+s1 2 late() {sim.treeSeqOutput("./" + name  +"_sbs_decap.trees");
+}
+
+mutationEffect(m1) {//
+if (season == "summer" & homozygous) {return 1.0;} else
+if (season == "summer" & !homozygous) {return 1.0 + ds*ss;}
+else {return effect;}
+//ifelse(season == "summer" & homozygous, )
+//	if(season == "summer" & homozygous) {//
+//		return 1.0;}
+//		else {return effect;} // this is the else of homozygous
+}// //mutation effect m1 -- close
+
+mutationEffect(m2) {//
+if (season == "winter" & homozygous) {return 1.0;} else
+if(season == "winter" & !homozygous) {return 1.0 + dw*sw;}
+else {return effect;}
+//	if(season == "winter" & homozygous) {//
+//		return 1.0;}
+//		else {return effect;} // this is the else of homozygous
+}// //mutation effect m2 -- close
+
+
+early() {
+
+//creating seasonality
+
+			if (season == "summer"){
+				defineGlobal("x", x + 1);
+			}	// cose if (season == "summer")
+			 
+			if (season == "winter"){
+				defineGlobal("y", y + 1);				
+			} // cose if (season == "winter")
+
+			if (x > len){
+				defineGlobal("season", "winter");	
+				defineGlobal("x", 0.0);
+				defineGlobal("y", 0.0);
+ 			}
+			if (y > len){			
+				defineGlobal("season", "summer");	
+				defineGlobal("x", 0.0);
+				defineGlobal("y", 0.0);
+			}
+
+
+}
+
+late() {
+winter_freq = sim.mutationFrequencies(p1, winter);
+summer_freq = sim.mutationFrequencies(p1, summer);
+
+	catn(sim.cycle + ": "  + season + ", p_w=" + winter_freq + ", p_s=" + summer_freq);
+}
+
