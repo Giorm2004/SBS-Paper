@@ -5,11 +5,11 @@ import scipy.sparse.linalg as sla
 import scipy.linalg as la
 import tskit as ts
 from statsmodels.distributions.empirical_distribution import ECDF
-from multiprocessing import Pool
 
-def n_samps_mat(nlineages, n, ap, hp, r, mut):
-# to avoid confusion, nlineages and n are both in terms of number of chromosomes. For a diploid organism, double the effective population size before inputting.
-# this generates the subintensity matrix for the discrete PH dist of segregating sites, which is a Poiss. dist overlaid on the PH distribution for coalescence times, which is modeled w/ a structured coalescent
+def n_samps_mat(nlineages, n, ap, hp, r, mut, c=None):
+# this generates the subintensity matrix for the PH distribution of coalescence times
+    if c==None:
+        c = 2*n*hp
     stateslist = []
     dim1 = ((nlineages+1)*(nlineages+2)/2) - 3
     for i in range(nlineages+1):
@@ -28,13 +28,13 @@ def n_samps_mat(nlineages, n, ap, hp, r, mut):
             if state == (0,1) or state == (1,0):
                 continue
             elif i == (state[0]-1, state[1]+1) and state[0] >= 1:
-                vals.append(state[0]*r*ap/(state[0]+state[1]))
+                vals.append(state[0]*r*ap)
             elif i == (state[0]+1, state[1]-1) and state[1] >= 1: 
-                vals.append(state[1]*r*ap/(state[0]+state[1]))
+                vals.append(state[1]*r*ap)
             elif i == (state[0] - 1, state[1]) and state[0] >= 2:
-                vals.append((1/(hp*n))*comb(state[0], 2)/(state[0]+state[1]))
+                vals.append((1/(c))*comb(state[0], 2))
             elif i == (state[0], state[1]-1) and state[1] >= 2:
-                vals.append((1/(hp*n))*comb(state[1], 2)/(state[0]+state[1]))
+                vals.append((1/(c))*comb(state[1], 2))
             else:
                 continue
             nnz += 1
@@ -87,48 +87,147 @@ def n_samps_mat(nlineages, n, ap, hp, r, mut):
             cols[i] -= 1
     del cols[ind]
     mat = csr_matrix((vals, cols, rows))
+    return mat
     #print(mat.toarray())
     #return mat
-    mat1 = (identity(dim1, format="csr") - mat*(1/mut)).toarray()
+    #mat1 = (identity(dim1, format="csr") - mat*(1/(n*mut))).toarray()
+    #return np.linalg.inv(mat1)
+def s_transform(dim, lins, mat, mut):
+    mat = mat.toarray()
+    stateslist = []
+    for i in range(int(lins)+1):
+        for j in range(int(lins)+1-i):
+            stateslist.append((i,j))
+    stateslist = stateslist[1:]
+    stateslist.remove((1,0))
+    stateslist.remove((0,1))
+    diag = np.diag(np.array([1/(state[0]+state[1]) for state in stateslist]))
+    mat1 = (identity(dim) - mat*(1/(mut)))
     return np.linalg.inv(mat1)
+def overdom_mat(nlineages, n, p, r):
+    stateslist = []
+    dim1 = ((nlineages+1)*(nlineages+2)/2) - 3
+    for i in range(nlineages+1):
+        for j in range(nlineages+1-i):
+            stateslist.append((i,j))
+    stateslist = stateslist[1:]
+#    print(stateslist)
+    vals = []
+    cols = []
+    rows = []
+    nnz = 0
+    for state in stateslist:
+        rows.append(nnz)
+        for i in stateslist:
+            first = True
+            if state == (0,1) or state == (1,0):
+                continue
+            elif i == (state[0]-1, state[1]+1) and state[0] >= 1:
+                vals.append(state[0]*r*(1-p)/(2))
+            elif i == (state[0]+1, state[1]-1) and state[1] >= 1:
+                vals.append(state[1]*r*p/(2))
+            elif i == (state[0] - 1, state[1]) and state[0] >= 2:
+                vals.append((1/(2*p*n))*comb(state[0], 2))
+            elif i == (state[0], state[1]-1) and state[1] >= 2:
+                vals.append((1/(2*(1-p)*n))*comb(state[1], 2))
+            else:
+                continue
+            nnz += 1
+            cols.append(stateslist.index(i))
+    rows.append(nnz)
+    for i in range(len(rows)-1):
+        if rows[i] == rows[i+1]:
+            continue
+        else:
+            a =(-1 * sum(vals[rows[i]:rows[i+1]]))
+            if i > max(cols[rows[i]:rows[i+1]]):
+                vals.insert(rows[i+1], a)
+                cols.insert(rows[i+1], i)
+                for k in range(i+1,len(rows)):
+                    rows[k] +=1
+            else:
+                for j in cols[rows[i]:rows[i+1]]:
+                    if j > i:
+                        ind = rows[i] + cols[rows[i]:rows[i+1]].index(j)
+                        vals.insert(ind, a)
+                        cols.insert(ind, i)
+                        for k in range(i+1,len(rows)):
+                            rows[k] +=1
+                        break
+                    else:
+                        continue
+#    print(vals)
+#    print(cols)
+#    print(rows)
+    rows = np.unique(rows)
+    last = stateslist.index((1,0))
+    #print(last)
+    first = stateslist.index((0,1))
+    #print(first)
+    for i in range(len(rows)):
+        if rows[i] > cols.index(first):
+            rows[i] -= 1
+        if rows[i] > cols.index(last):
+            rows[i] -= 1
+    del vals[cols.index(first)]
+    for i in range(len(cols)):
+        if cols[i] > first:
+            cols[i] -= 1
+    cols.remove(first)
+    last -= 1
+    ind = cols.index(last)
+    del vals[ind]
+    for i in range(len(cols)):
+        if cols[i] > last:
+            cols[i] -= 1
+    del cols[ind]
+    mat = csr_matrix((vals, cols, rows))
+    return(mat)
+
+
 def neut_mat(n, nlineages, mut):
     #matrix for regular  old coalescent, just reformulated as a PH distribution
-    coal_rates = [-comb(x,2)/n for x in range(2,nlineages+1)]
+    coal_rates = [-comb(x,2)/x for x in range(2,nlineages+1)]
     coal_rates.reverse()
     mat1 = np.diag(coal_rates) + -1*np.diag(coal_rates[:-1], k=1)
     l = mat1.shape[0]
-    return np.linalg.inv((identity(l) - mat1*(1/mut)))
+    return np.linalg.inv((identity(l) - mat1*(1/(n*mut))))
 
 
 def matmean(mat, vec):
     #computes mean of a DPH dist
     #inv = la.inv(mat)
-    ln = inv.shape[0]
+    ln = mat.shape[0]
     idd = np.eye(ln)
-    vec2 = vec.dot(inv)
-    vec3 = la.inv(idd - inv).dot(np.ones(ln))
-    return vec2.dot(vec3)
+    vec2 = np.linalg.inv(idd - mat).dot(np.ones(ln))
+    return vec.dot(vec2)
 def matmean_cont(mat, vec):
     #Mean of PH
-    #inv = sla.inv(-1*mat).toarray()
+    inv = sla.inv(-1*mat).toarray()
     return vec.dot(inv.dot(np.ones(vec.shape[0])))
 
 def cdf(mat, vec, x):
     #cdf of DPH, need to rewrite in S+1 form as in Holboth
     #mat = np.linalg.inv(mat)
     #print(mat)
-    vec = vec.dot(mat)
-    matpow = np.linalg.matrix_power(mat, x)
+    matpow = np.linalg.matrix_power(mat, x+1)
     vec = np.ravel(vec)
     ones = np.ones(vec.shape[0])
     return 1 - vec.dot(np.ravel(matpow.dot(ones)))
 def pmf(mat, vec, x):
     #pmf of DPH, need to rewrite in S+1 as in Holboth
-    s1 = np.ones(vec.shape[0])
     x = int(x)
-    print(x-1)
-    s2 = s1 - mat.dot(s1)
-    matpow = np.linalg.matrix_power(mat, x-1)
+    if isinstance(vec, list):
+        vec = np.array(vec)
+    s1 = np.ones(vec.shape[0])
+    '''
+    if mat.shape == (1,1):
+        mat = mat[0,0]
+        s2 = s1 - mat*s1
+        return vec.dot(((mat**x)*s2))
+    '''
+    s2 = np.ravel(s1 - mat.dot(s1))
+    matpow = np.linalg.matrix_power(mat, x)
     return vec.dot(np.ravel(matpow.dot(s2)))
 
 
@@ -143,10 +242,6 @@ def prob_to_distance(prob, recomb_rate):
     # print(type(recomb_rate))
     x=(-(1/(2*recomb_rate))*np.log(1-2*prob))
     return x
-def sampler(state, a0, a1):
-    #exterior helper function because of annoying stuff with MP pickling
-    #should just sample fully randomly but just record what state
-    return np.concatenate((np.random.choice(a0, state[0], replace = False), np.random.choice(a1, state[1], replace = False)))
 def max_dist(lst):
     #finds longest sequence run between two recombination breakpoints
     #I did get lazy and have AI write this, as you can see by it actually raising specific errors instead of generic exceptions
@@ -160,7 +255,7 @@ def max_dist(lst):
             max_diff = current_diff
             elements = (lst[i], lst[i + 1])
     return elements
-def pre_ecdf(treename, samp_size, num_samps, num_windows, recomb_rate, end, num_tasks):
+def pre_ecdf(treename, samp_size, num_samps, num_windows, recomb_rate, end):
     #This processes a bunch of data that we need 
     tree = ts.load(str(treename))
     #Sometimes, we get an extra allele of a given type in SLiM, which throws off Allele indexing
@@ -175,24 +270,19 @@ def pre_ecdf(treename, samp_size, num_samps, num_windows, recomb_rate, end, num_
     counts = [alleles[1][np.where(alleles[0] == int(x))][0] for x in kept]
     tot = sum(counts)
     print(counts)
-    freqs = [round(samp_size*x/tot) for x in counts]
+    freq = counts[0]/tot
     if len(kept) > 2:
         raise Exception("More than 2 non-trivial alleles")
     #need to basically get rid of this. This was all about sampling so that the samples have an allele frequency as close as possible to that of the population, but this is just dumb
     #Instead, just choose samples randomly, and then just get state vector by using binomial distribution. 
     #By law of large numbers, this should just converge to whatever the true state vector is anyways. Basically generalized HW btw. 
-    state = (freqs[0], freqs[1])
-    print(state)
-    a0 = [x for x in tree.samples() if g.alleles[g.genotypes[x]] == g.alleles[kept[0]]]
-    print(len(a0))
-    a1 = [x for x in tree.samples() if g.alleles[g.genotypes[x]] == g.alleles[kept[1]]]
-    print(len(a1))
     #first round of windowing, artificial
     #have to rework this so windows are far enough apart
     prob_breakpoints = np.logspace(-5, np.log10(end), int(num_windows))
     #print(prob_breakpoints)
     tree_points = tree.breakpoints(as_array=True)
     distance_breakpoints = [prob_to_distance(x, recomb_rate) for x in prob_breakpoints]
+    print(distance_breakpoints)
     distance_breakpoints1 = [(x + 1e6) for x in distance_breakpoints]
     distance_breakpoints2 = [(1e6-x) for x in distance_breakpoints]
     distance_breakpoints1.insert(-1, tree.sequence_length)
@@ -228,10 +318,7 @@ def pre_ecdf(treename, samp_size, num_samps, num_windows, recomb_rate, end, num_
     new_breaks.sort() 
     print(new_breaks)
     print("done with finding windows")
-    #multithreading sampling
-    with Pool(num_tasks) as pool:
-        samps_list = pool.starmap(sampler, [(state, a0, a1) for i in range(num_samps)])
-    #samps_list = np.array(samps_list)
+    samps_list = np.random.rand(num_samps, len(tree.samples())).argpartition(samp_size,axis=1)[:,:samp_size]
     print('done with samps_list')
     #samps_list = [np.concatenate((np.random.choice(a0, state[0], replace = False), np.random.choice(a1, state[1],replace=False))) for x in range(num_samps)]
     samp_sites = np.array(tree.segregating_sites(sample_sets = samps_list, span_normalise=False, windows=new_breaks)).T
@@ -246,14 +333,17 @@ def pre_ecdf(treename, samp_size, num_samps, num_windows, recomb_rate, end, num_
     stateslist = stateslist[1:]
     stateslist.remove((1,0))
     stateslist.remove((0,1))
-    index = stateslist.index(state)
     vec = np.zeros(len(stateslist)).tolist()
     #print(state)
     #print(stateslist)
     #do not do this. use binom instead
-    vec[index] = 1
+    for state in stateslist:
+        if state[0]+state[1] == samp_size:
+            vec[stateslist.index(state)] = comb(samp_size, state[0])*(freq**state[0])*((1-freq)**state[1])
+    nvec = np.zeros(samp_size-1).tolist()
+    nvec[-1] = 1
     #samp_sites = np.transpose(samp_sites)
-    pre = [samp_sites, vec, win_sizes, recombdists]
+    pre = [samp_sites, vec, win_sizes, recombdists, freq, nvec]
 #    for i in pre:
  #       print(type(i))
   #      for j in i:
@@ -279,7 +369,6 @@ def eprob_arr(samp_sites):
     samp_sites = np.array(samp_sites)
     records = []
     for i in samp_sites:
-        i = i[i!=0]
         l = 1/(i.shape[0])
         unique, counts = np.unique(i, return_counts=True)
         counts = counts.astype(float)
@@ -305,10 +394,16 @@ def ks_solve(ecdf_vec, win_size, vec, lins, n, ap, hp, r, mut):
     #this just computes the ks distance from parameter values directly, generates the mat
     #print(win_size)
     mat =  n_samps_mat(lins, n, ap, hp, r, mut*win_size)
+    mat = s_transform(vec.shape, mat, mut*win_size)
     return ks_dist(mat, vec, ecdf_vec)
-def kl_solve(eprob_tup, win_size, vec, lins, n, ap, hp, r, mut):
+def sbs_kl_solve(eprob_tup, win_size, vec, lins, n, ap, hp, r, mut, c=None):
     #same as above but for KL div
-    mat =  n_samps_mat(lins, n, ap, hp, r, mut*win_size)
+    mat =  n_samps_mat(lins, n, ap, hp, r, mut*win_size, c)
+    mat = s_transform(len(vec), lins, mat, mut*win_size)
+    return kl_div(mat, vec, eprob_tup[1], eprob_tup[0])
+def overdom_kl_solve(eprob_tup, win_size, vec, lins, n, p, r, mut):
+    mat = overdom_mat(lins, n, p, r)
+    mat = s_transform(len(vec), lins, mat, mut*win_size)
     return kl_div(mat, vec, eprob_tup[1], eprob_tup[0])
 def neut_ks(ecdf_vec, win_size, lins, n, mut):
     #neutral
@@ -316,5 +411,10 @@ def neut_ks(ecdf_vec, win_size, lins, n, mut):
     vec =  np.zeros(lins-1)
     vec[-1] = 1
     return ks_dist(mat, vec, ecdf_vec)
+def neut_kl(tup, nvec, win_size, lins, n, mut):
+    mat = neut_mat(n, lins, mut*win_size)
+    nvec = np.array(nvec)
+    return kl_div(mat, nvec, tup[1], tup[0])
+
 
 #need to write neut_kl and also use binom state vector instead of unit state vector.
