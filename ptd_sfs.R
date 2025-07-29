@@ -145,18 +145,12 @@ binom_vec <- function(n,p){
 	return (sapply(0:n, binom_prob, n = n, p = p))
 
 }
-
-ipv <- binom_vec(10, 0.5)
-start <- proc.time()[3]
-gr <- sfs_graph(20, 0.25, 0.25, 0.054,  0.05, ipv)
-end <- proc.time()[3]
-
 sbs_graph <- function(k, p, ph, rho){
   sfs_graph(k, ph, ph, rho / 2, rho / 2, binom_vec(k, p))
 }
 
-overdom_graph <- function(k, p, rho){
-	sfs_graph(k, p, 1-p, rho * (1-p), rho*p, binom_vec(k, p))
+overdom_graph <- function(k, p, eq, rho){
+	sfs_graph(k, eq, 1-eq, rho * (1-eq), rho*eq, binom_vec(k, p))
 }
 
 nsfs <- function(k){
@@ -166,20 +160,37 @@ marg_moments <- function(i, k, graph, ord) {
   rewards <- states(graph)[, i] + states(graph)[, i + k]
   moments(graph, ord, rewards)
 }
-mm_spec <- function(k, graph, ord) {
+mm_spec <- function(graph, k, ord) {
   sapply(1:(k-1), marg_moments, k = k, graph = graph, ord = ord)
 }
-print(sapply(1:9, marg_moments, k = 10, graph = gr, ord = 1 ))
+
 fold <- function(i, usfs){
   l <- length(usfs)
   if (2 * i == l){
     return(usfs[i])
   
-  usfs[i] + usfs[l-i]
+  usfs[i] + usfs[l - i]
 }
 }
 foldsfs <- function(usfs){
   l <- length(usfs) %/% 2
   sapply(1:l, fold, usfs = usfs)
 }
-print(end - start)
+normalize_sfs <- function(sfs){
+	tot = sum(sfs)
+	sapply(sfs, function(i) i/tot)
+}
+
+norm_sfs_sbs <- function(k, p, ph, rho){
+	graph <- sbs_graph(k,p, ph, rho)
+	normalize_sfs(mm_spec(graph, k, 1))
+}
+
+norm_sfs_over <- function(k, p, eq, rho){
+	graph <- overdom_graph(k, p, eq, rho)
+	normalize_sfs(mm_spec(graph, k, 1))
+}
+
+nnsfs <- function(k) {
+	normalize_sfs(nsfs(k))
+}

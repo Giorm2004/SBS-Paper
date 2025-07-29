@@ -34,13 +34,13 @@ def find_loci(breakslist, pos):
         if (low == (high - 1)):
             return (low, high)
         if breakslist[mid] == pos:
-            return (mid)
+            return [mid]
         if breakslist[mid] < pos:
             low = mid
         else:
             high = mid
 
-def get_mean_sfs(treename, samp_size, num_samps, num_loci):
+def get_mean_sfs_loc(treename, samp_size, num_samps, num_loci):
     tree = ts.load(str(treename))
     tree_points = tree.breakpoints(as_array=True)
     posind = find_loci(tree_points, 1e6)[0]
@@ -49,3 +49,20 @@ def get_mean_sfs(treename, samp_size, num_samps, num_loci):
     samps_list = np.random.rand(num_samps, len(tree.samples())).argpartition(samp_size,axis=1)[:,:samp_size]
     samp_sites = np.array([tree.allele_frequency_spectrum(sample_sets = [samps_list[i]], span_normalise=False, windows=poslist, polarised=True) for i in range(samps_list.shape[0])]) 
     return np.sum(samp_sites, axis=0)[1:-1, 1:-1]/num_samps
+
+def get_mean_sfs_win(treename, samp_size,  num_samps, dist):
+    tree = ts.load(str(treename))
+    poslist = [0, 1e6 - dist, 1e6 + dist,  2e6+1]
+    samps_list = np.random.rand(num_samps, len(tree.samples())).argpartition(samp_size,axis=1)[:,:samp_size]
+    samp_sites = np.array([tree.allele_frequency_spectrum(sample_sets = [samps_list[i]], span_normalise=False, windows=poslist, polarised=True) for i in range(samps_list.shape[0])]) 
+    return np.sum(samp_sites, axis=0)[1:-1, 1:-1]/num_samps
+
+def get_mean_sfs_win_time_series(treename, n, samp_size,  num_samps, dist):
+    tree = ts.load(str(treename))
+    poslist = [0, 1e6 - dist, 1e6 + dist,  2e6+1]
+    samps = tree.samples()
+    samp_sets = np.reshape(samps, (int(len(samps)/n), n))
+    indice_sets = [np.random.rand(num_samps, len(tree.samples())).argpartition(samp_size,axis=1)[:,:samp_size] for set in samp_sets]
+    samps_list = [np.take(samp_sets[i], indice_sets[i]) for i in range(samp_sets.shape[0])]
+    samp_sfss = [np.array([tree.allele_frequency_spectrum(sample_sets = [samp_list[i]], span_normalise=False, windows=poslist, polarised=True) for i in range(samp_list.shape[0])]) for samp_list in samps_list]
+    return [np.sum(samp_sfs, axis=0)[1:-1, 1:-1]/num_samps for samp_sfs in samp_sfss]
