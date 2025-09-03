@@ -1,17 +1,17 @@
 library("pracma")
 library("ptdalgorithms")
-#inputs: k, k1, k2, m12, m21, IPV sorted in decreasing order of lines in pop 1, with all non-singleton states excluded
+
 sfs_graph <- function(k, k1, k2, m12, m21, IPV) {
+#inputs: k, k1, k2, m12, m21, IPV sorted in decreasing order of lines in pop 1, with all non-singleton states excluded
 
-#getting fictional states, need to make sure every state actually has proper number of lines
   graph <- create_graph(2 * k)
-
+#creates starting state, which is "fictional" in the sense that it gets left immediately 
   start <- vertex_at(graph, 1)
-
+#absorbing state, aka coalescence
   absorb_state <- rep(0, 2*k)
 absorb_state[2*k] <- 1
 absorb <- find_or_create_vertex(graph, absorb_state)
-
+#one initial state to start, others added later
 initial <- rep(0, 2*k)
 initial[1] <- k
 find_or_create_vertex(graph, initial)
@@ -21,14 +21,10 @@ index <- 3
 while (index <= vertices_length(graph)) {
 	vertex <- vertex_at(graph, index)
 	state <- vertex$state
-	#print(index)
-	#print(state)
 	#check if possible initial state
 	if (state[1] + state[k+1] == k) {
-		#print("possible initial state")
-		#print(IPV[state[k+1] + 1])
+	#weight is just entry in IPV
 	add_edge(start, find_or_create_vertex(graph, state), IPV[state[k+1] + 1])
-	#print("initial state added")
 	}
 	for (i in 1:(2*k)){
 	#set rates for pop 1s
@@ -36,22 +32,19 @@ while (index <= vertices_length(graph)) {
 		#coalescence of two branches subtending same number of lineages
 		if (state[i] > 1){
 			if (i * 2 == k){
+				#checks if this would be a final coalescence event
 				add_edge(vertex, absorb, 1/k1)
 			}
 			else{
-		#print("equal line coal")
 		child <- sapply(state, function(i) i)
 		child[i] <- state[i] - 2
 		child[2*i] <- state[2*i] + 1
-		#print(child)
 		add_edge(vertex, find_or_create_vertex(graph, child), nchoosek(state[i], 2)/k1)
 			}}
 		#migration
-		#print("migration")
 		child <- sapply(state, function(i) i)
 		child[i] <- state[i] - 1
 		child[i+k] <- state[i+k] + 1
-		#print(child)
 		add_edge(vertex, find_or_create_vertex(graph, child), state[i]*m12)
 		#coalescence of branches subtending different number of lineages
 		for (j in (i+1):(k-1)){
@@ -59,13 +52,10 @@ while (index <= vertices_length(graph)) {
 			
 		if (i + j == k) {
 		#absorbing
-		#print("absorbing")
 
 		add_edge(vertex, absorb, 1/k1)
 		}
 		else{
-			#print("unequal line coal")
-
 		child <- sapply(state, function(i) i)
 		child[i] <- state[i] - 1
 		child[j] <- state[j] - 1
@@ -80,12 +70,10 @@ while (index <= vertices_length(graph)) {
 		}
 	
 	}
-
+#this is just the same but for p2
 	if ((i %in% (k+1):(2*k-1)) & (state[i] > 0)){ # nolint: vector_logic_linter.
-		#print('down here now')
 	#coalescence of two branches subtending same number of lineages
 		if (state[i] > 1){
-			#print("equal line coal")
 			if (2*i == 3 * k){
 				add_edge(vertex, absorb, 1/k2)
 			}
@@ -93,15 +81,12 @@ while (index <= vertices_length(graph)) {
 	child <- sapply(state, function(i) i)
 	child[i] <- state[i] - 2
 	child[2 * i - k] <- state[2 * i - k] + 1
-	#print(child)
 	add_edge(vertex, find_or_create_vertex(graph, child), nchoosek(state[i], 2)/k2)
 			}}
 	#migration
-	#print('migration')
 	child <- sapply(state, function(i) i)
 	child[i] <- state[i] - 1
 	child[i-k] <- state[i-k] + 1
-	#print(child)
 	add_edge(vertex, find_or_create_vertex(graph, child), state[i]*m21)
 #coalescence of branches subtending different number of lineages
 for (j in (i+1):(2*k-1)){

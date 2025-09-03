@@ -1,0 +1,17 @@
+initialize() {
+	initializeTreeSeq(timeUnit="generations");
+	initializeRecombinationRate(r, 2e6);
+	initializeMutationType("m1", 0.0, "f", 0.0);
+	initializeGenomicElementType("g1", m1, 1.0);
+	initializeGenomicElement(g1, 1e6, 1e6);
+	initializeMutationRate(0);
+	
+}
+
+1 early() {
+	sim.addSubpop("p1", N);
+	community.rescheduleScriptBlock(s1, 50*N, 50*N); 
+}
+
+s1 2 late() {sim.treeSeqOutput("./" + name +"neut_decap.trees");
+}

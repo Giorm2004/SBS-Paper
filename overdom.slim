@@ -7,9 +7,10 @@ initialize() {
 // create basic paramters
 	initializeMutationType("m1", d, "f", sw);
 	m1.color = "blue";
+	m1.convertToSubstitution = F;
 	initializeMutationType("m2", d, "f", ss);
 	m2.color = "red";
-	m2.convertToSubstitution = T;
+	m2.convertToSubstitution = F;
 	initializeRecombinationRate(r, 2e6);
 	initializeGenomicElementType("g1", m1, 1.0);
 	initializeGenomicElement(g1, 1e6, 1e6);
@@ -19,8 +20,9 @@ initialize() {
 
 1 early() {
 	sim.addSubpop("p1", N);
-	community.rescheduleScriptBlock(s1, 10*N, 10*N);
-	
+	community.rescheduleScriptBlock(s2, ticks = c(K*N - 10, K*N - 5));
+	community.rescheduleScriptBlock(s1, K*N, K*N);
+ 
 alls_inds = p1.individuals;
 set1 = sample(alls_inds, asInteger(round(N*WinterFreq)));
 set2 = setDifference(alls_inds, set1);
@@ -34,8 +36,11 @@ set2 = setDifference(alls_inds, set1);
 	defineConstant("summer", target2.mutations[0]);
 
 }
-s1 2 late() {sim.treeSeqOutput("./" + name +"overdom_decap.trees");
+s1 2 late() {sim.treeSeqOutput("./" + name +"_decap.trees");
 }
+
+//time series 
+s2 3 late() {sim.treeSeqRememberIndividuals(p1.individuals);}
 
 
 

@@ -2,14 +2,6 @@
 
 initialize() {
 	initializeTreeSeq(timeUnit="generations");
-	//defineConstant("sw", 0.1);
-	//defineConstant("dw", 0.6);
-	///
-	//defineConstant("ss", 0.2); // orig 0.1
-	//defineConstant("ds", 0.4); // oring 0.6
- 	///
-	//defineConstant("Ns", 100);
-	//defineConstant("WinterFreq", 0.7);
 // create seasonal counters
 	defineGlobal("x", 0);
    	defineGlobal("y", 0);
@@ -24,16 +16,16 @@ initialize() {
 	m2.convertToSubstitution = F;
 	initializeRecombinationRate(r, 2e6);
 	initializeGenomicElementType("g1", c(m1,m2), c(1.0, 1.0));
-	initializeGenomicElement(g1, 1e6, 1e6+1);
+	initializeGenomicElement(g1, 1e6, 1e6);
 	initializeMutationRate(0);
 	
 }
 
 1 early() {
 	sim.addSubpop("p1", N);
-	community.rescheduleScriptBlock(s1, 10*N, 10*N);
-	
-alls_inds = p1.individuals;
+	community.rescheduleScriptBlock(s2, ticks = c(K*N - 10, K*N - 5));
+	community.rescheduleScriptBlock(s1, K*N, K*N); 
+ alls_inds = p1.individuals;
 set1 = sample(alls_inds, asInteger(round(N*WinterFreq)));
 set2 = setDifference(alls_inds, set1);
 
@@ -45,9 +37,13 @@ set2 = setDifference(alls_inds, set1);
 	target2.addNewDrawnMutation(m2, 1e6);
 	defineConstant("summer", target2.mutations[0]);
 
+
+
 }
-s1 2 late() {sim.treeSeqOutput("./" + name  +"_sbs_decap.trees");
+s1 2 late() {sim.treeSeqOutput("./" + name  +"_decap.trees");
 }
+
+s2 3 late() {sim.treeSeqRememberIndividuals(p1.individuals);}
 
 mutationEffect(m1) {//
 if (season == "summer" & homozygous) {return 1.0;} else

@@ -1,7 +1,7 @@
 source('/scratch/nzx3cc/nzx3cc/sbs_paper/scripts/ptd_sfs.R')
 
 comp_kl <- function(obs, ex){
-    vec <- sapply(1:length(obs), function(i) obs[i]*log(obs[i]/ex[i]))
+    vec <- sapply(1:length(obs), function(i) ifelse(obs[i]==0, 0,obs[i]*log(obs[i]/ex[i])))
     sum(vec)}
 comp_like <- function(obs, ex){
     vec <- sapply(1:length(obs), function(i) -1 * obs[i] * log(ex[i]))
@@ -38,12 +38,10 @@ comp_2kl(obs, time_series_sfs_sbs(k, p_vec, ph, rho))
 get_2kl_over <- function(eq, obs, p_vec, k, rho){
     comp_2kl(obs, time_series_sfs_over(k, p_vec, eq, rho))
 }
-
-
-
 get_mpl_sbs <- function(obs, p_vec, k, rho){
     optim(0.4, get_complike_sbs, obs = obs, p_vec = p_vec, k = k, rho = rho, method="Brent", lower=0, upper=0.45, control = list(reltol = 1e-3))
 }
+
 get_mpl_over <- function(obs, p_vec, k, rho){
 optim(0.5, get_complike_over, obs = obs, p_vec = p_vec, k = k, rho = rho, method="Brent", lower=0.1, upper=0.9, control = list(reltol = 1e-3))
 }

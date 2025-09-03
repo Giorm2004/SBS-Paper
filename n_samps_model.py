@@ -123,9 +123,9 @@ def overdom_mat(nlineages, n, p, r):
             if state == (0,1) or state == (1,0):
                 continue
             elif i == (state[0]-1, state[1]+1) and state[0] >= 1:
-                vals.append(state[0]*r*(1-p)/(2))
+                vals.append(state[0]*r*(1-p)/(1))
             elif i == (state[0]+1, state[1]-1) and state[1] >= 1:
-                vals.append(state[1]*r*p/(2))
+                vals.append(state[1]*r*p/(1))
             elif i == (state[0] - 1, state[1]) and state[0] >= 2:
                 vals.append((1/(2*p*n))*comb(state[0], 2))
             elif i == (state[0], state[1]-1) and state[1] >= 2:
@@ -255,24 +255,32 @@ def max_dist(lst):
             max_diff = current_diff
             elements = (lst[i], lst[i + 1])
     return elements
-def pre_ecdf(treename, samp_size, num_samps, num_windows, recomb_rate, end):
-    #This processes a bunch of data that we need 
+def pre_ecdf(treename, samp_size, num_samps, num_windows, recomb_rate, end, time_depth=1):
+    '''This processes a bunch of data that we need''' 
     tree = ts.load(str(treename))
     #Sometimes, we get an extra allele of a given type in SLiM, which throws off Allele indexing
-    for x in tree.variants(left=int(1e6), right=int(1e6)+1):
-        g = x
-    alleles = np.unique(g.genotypes, return_counts=True)
-    print(alleles)
-    kept=[]
-    tmp_count = 0
-    kept = [alleles[0][x] for x in range(len(alleles[0])) if alleles[1][x] >= tree.samples().shape[0]*0.05]
-    print(kept)
-    counts = [alleles[1][np.where(alleles[0] == int(x))][0] for x in kept]
-    tot = sum(counts)
-    print(counts)
-    freq = counts[0]/tot
-    if len(kept) > 2:
-        raise Exception("More than 2 non-trivial alleles")
+    nodetimes = tree.nodes_time
+    freqslist = []
+    for i in range(time_depth):
+        nodes = np.where(nodetimes == i)[0]
+        print(nodes.shape)
+        for x in tree.variants(samples=nodes, isolated_as_missing=False, left=int(1e6), right=int(1e6)+1):
+            g = x
+        alleles = np.unique(g.genotypes, return_counts=True)
+        #print(alleles)
+        kept=[]
+        tmp_count = 0
+        kept = [alleles[0][x] for x in range(len(alleles[0])) if alleles[1][x] >= tree.samples().shape[0]*0.05]
+        #print(kept)
+        counts = [alleles[1][np.where(alleles[0] == int(x))][0] for x in kept]
+        tot = sum(counts)
+        #print(counts)
+        freq = counts[0]/tot
+        if len(kept) > 2 and i == 0:
+            raise Exception("More than 2 non-trivial alleles")
+        freqslist.append(freq)
+    if time_depth ==1:
+        freqslist == freqslist[0]
     #need to basically get rid of this. This was all about sampling so that the samples have an allele frequency as close as possible to that of the population, but this is just dumb
     #Instead, just choose samples randomly, and then just get state vector by using binomial distribution. 
     #By law of large numbers, this should just converge to whatever the true state vector is anyways. Basically generalized HW btw. 
@@ -343,7 +351,7 @@ def pre_ecdf(treename, samp_size, num_samps, num_windows, recomb_rate, end):
     nvec = np.zeros(samp_size-1).tolist()
     nvec[-1] = 1
     #samp_sites = np.transpose(samp_sites)
-    pre = [samp_sites, vec, win_sizes, recombdists, freq, nvec]
+    pre = [samp_sites, vec, win_sizes, recombdists, freqslist, nvec]
 #    for i in pre:
  #       print(type(i))
   #      for j in i:
