@@ -4,6 +4,7 @@ args <- commandArgs(trailingOnly = TRUE)
 filename = toString(args[1])
 k = as.numeric(args[2])
 p = as.numeric(args[3])
+
 rho = as.numeric(args[4])
 obs <- unlist(read.table(filename))
 sbs = get_mpl_sbs(obs, p, k, rho)
